@@ -157,7 +157,7 @@ export default function AnalyticsPage() {
               <thead>
                 <tr className="border-b border-gray-100 text-xs font-semibold text-gray-400 uppercase">
                   <th className="pb-3">Розробник</th>
-                  <th className="pb-3 text-center">Виконано задач</th> {/* ДОДАНО */}
+                  <th className="pb-3 text-center">Виконано задач</th>
                   <th className="pb-3 text-center">Витрачений час</th>
                   <th className="pb-3 text-center">Комітів</th>
                   <th className="pb-3 text-right">Зміни коду</th>

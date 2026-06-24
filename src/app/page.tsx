@@ -8,6 +8,7 @@ interface Project {
   id: string;
   name: string;
   repoFullName: string | null;
+  isArchived: boolean;
   _count: {
     tasks: number;
   };
@@ -19,6 +20,9 @@ export default function Home() {
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectRepo, setNewProjectRepo] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  const activeProjects = projects.filter((p) => !p.isArchived);
+  const archivedProjects = projects.filter((p) => p.isArchived);
 
   // Завантаження проєктів з API
   const fetchProjects = async () => {
@@ -160,41 +164,70 @@ export default function Home() {
           </form>
         </section>
 
-        {/* Список проєктів */}
-        <section className="md:col-span-2">
-          <h2 className="text-lg font-bold mb-4">Ваші проєкти</h2>
-          {projects.length === 0 ? (
-            <div className="bg-white border rounded-lg p-12 text-center text-gray-500">
-              У вас поки немає створених проєктів. Використайте форму ліворуч, щоб створити перший.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {projects.map((project) => (
-                <div
-                  key={project.id}
-                  className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm hover:border-indigo-300 transition flex flex-col justify-between"
-                >
-                  <div>
-                    <h3 className="font-bold text-lg text-gray-800">{project.name}</h3>
-                    {project.repoFullName && (
-                      <p className="text-xs text-gray-400 font-mono mt-1">
-                        GitHub: {project.repoFullName}
-                      </p>
-                    )}
+        {/* Список активних проєктів */}
+        <section className="md:col-span-2 flex flex-col gap-8">
+          <div>
+            <h2 className="text-lg font-bold mb-4">Ваші активні проєкти ({activeProjects.length})</h2>
+            {activeProjects.length === 0 ? (
+              <div className="bg-white border rounded-lg p-12 text-center text-gray-500 shadow-sm">
+                У вас поки немає активних проєктів. Використайте форму ліворуч, щоб створити перший.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {activeProjects.map((project) => (
+                  <div
+                    key={project.id}
+                    className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm hover:border-indigo-300 transition flex flex-col justify-between min-h-[160px]"
+                  >
+                    <div>
+                      <h3 className="font-bold text-lg text-gray-800">{project.name}</h3>
+                      {project.repoFullName && (
+                        <p className="text-xs text-gray-400 font-mono mt-1 truncate">
+                          GitHub: {project.repoFullName}
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-6 pt-4 border-t border-gray-100 flex justify-between items-center text-sm">
+                      <span className="text-gray-500">
+                        Задач: <strong>{project._count.tasks}</strong>
+                      </span>
+                      <Link href={`/projects/${project.id}`} className="text-indigo-600 hover:text-indigo-800 font-semibold">
+                        Відкрити →
+                      </Link>
+                    </div>
                   </div>
-                  <div className="mt-6 pt-4 border-t border-gray-100 flex justify-between items-center text-sm">
-                    <span className="text-gray-500">
-                      Задач у проєкті: <strong>{project._count.tasks}</strong>
-                    </span>
-                    <Link 
-  href={`/projects/${project.id}`}
-  className="text-indigo-600 hover:text-indigo-800 font-semibold"
->
-  Відкрити →
-</Link>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Відображення списку АРХІВНИХ проєктів (якщо вони є) */}
+          {archivedProjects.length > 0 && (
+            <div className="border-t border-gray-200 pt-8 mt-4">
+              <h2 className="text-lg font-bold text-gray-400 mb-4">Архів проєктів ({archivedProjects.length})</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {archivedProjects.map((project) => (
+                  <div
+                    key={project.id}
+                    className="bg-gray-50 p-6 rounded-lg border border-gray-200 shadow-sm opacity-60 hover:opacity-100 transition flex flex-col justify-between min-h-[160px]"
+                  >
+                    <div>
+                      <h3 className="font-bold text-lg text-gray-700 line-through">{project.name}</h3>
+                      {project.repoFullName && (
+                        <p className="text-xs text-gray-400 font-mono mt-1 truncate">
+                          GitHub: {project.repoFullName}
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-6 pt-4 border-t border-gray-200/60 flex justify-between items-center text-sm">
+                      <span className="text-gray-400">Архівовано</span>
+                      <Link href={`/projects/${project.id}`} className="text-indigo-600 hover:text-indigo-800 font-semibold">
+                        Переглянути архів →
+                      </Link>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
         </section>

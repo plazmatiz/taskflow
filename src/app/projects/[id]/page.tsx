@@ -36,6 +36,7 @@ interface Project {
   id: string;
   name: string;
   repoFullName: string | null;
+  isArchived: boolean;
   members: ProjectMember[];
 }
 
@@ -70,6 +71,58 @@ export default function ProjectPage() {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+
+  // Оновлена функція видалення проєкту
+  const handleDeleteProject = async () => {
+    if (!project) return; // ДОДАНО: захист від null
+
+    const confirmed = confirm(
+      "Ви впевнені, що хочете видалити цей проєкт назавжди? Усі задачі, часові сесії та затрекані коміти буде видалено БЕЗПОВОРОТНО."
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        router.push("/");
+      } else {
+        const err = await res.json();
+        alert(`Помилка: ${err.error}`);
+      }
+    } catch (err) {
+      console.error("Не вдалося видалити проєкт:", err);
+    }
+  };
+
+  // Оновлена функція архівації/розархівації проєкту
+  const handleToggleArchiveProject = async () => {
+    if (!project) return; // ДОДАНО: захист від null
+
+    const actionText = project.isArchived ? "розархівувати" : "архівувати";
+    const confirmed = confirm(`Ви впевнені, що хочете ${actionText} цей проєкт?`);
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isArchived: !project.isArchived }),
+      });
+
+      if (res.ok) {
+        fetchProjectDetails();
+      } else {
+        const err = await res.json();
+        alert(`Помилка: ${err.error}`);
+      }
+    } catch (err) {
+      console.error("Помилка зміни статусу архіву:", err);
+    }
+  };
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -420,6 +473,32 @@ export default function ProjectPage() {
                 </div>
               </div>
 
+            </div>
+            {/* Небезпечна зона (Danger Zone) */}
+            <div className="border-t border-red-100 pt-6 mt-8">
+              <h3 className="text-sm font-bold text-red-600 mb-1">Небезпечна зона</h3>
+              <p className="text-xs text-gray-400 mb-4">Адміністративні дії з високим ризиком.</p>
+              <div className="flex flex-wrap gap-3">
+
+                {/* Кнопка Архівувати / Розархівувати */}
+                <button
+                  type="button"
+                  onClick={handleToggleArchiveProject}
+                  className="px-4 py-2 border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold rounded transition"
+                >
+                  {project.isArchived ? "Розархівувати проєкт" : "Архівувати проєкт"}
+                </button>
+
+                {/* Кнопка Видалити */}
+                <button
+                  type="button"
+                  onClick={handleDeleteProject}
+                  className="px-4 py-2 border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold rounded transition"
+                >
+                  Видалити проєкт назавжди
+                </button>
+
+              </div>
             </div>
 
           </div>
