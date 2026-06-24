@@ -22,10 +22,21 @@ interface Task {
   sessions: TaskSession[];
 }
 
+interface ProjectMember {
+  userId: string;
+  role: string;
+  user: {
+    name: string | null;
+    image: string | null;
+    githubUsername: string | null;
+  };
+}
+
 interface Project {
   id: string;
   name: string;
   repoFullName: string | null;
+  members: ProjectMember[];
 }
 
 export default function ProjectPage() {
@@ -47,6 +58,8 @@ export default function ProjectPage() {
   const [isUpdatingProject, setIsUpdatingProject] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [cloneCode, setCloneCode] = useState(false);
+  const [inviteUsername, setInviteUsername] = useState("");
+  const [isInviting, setIsInviting] = useState(false);
 
   // Стан для примусового оновлення інтерфейсу кожну секунду (для таймерів)
   const [, setTick] = useState(0);
@@ -58,6 +71,32 @@ export default function ProjectPage() {
     return () => clearInterval(interval);
   }, []);
 
+  const handleAddMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteUsername.trim()) return;
+
+    setIsInviting(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ githubUsername: inviteUsername.trim() }),
+      });
+
+      if (res.ok) {
+        alert("Користувача успішно додано до проєкту!");
+        setInviteUsername("");
+        fetchProjectDetails(); // Оновлюємо дані проєкту (разом зі списком команди)
+      } else {
+        const err = await res.json();
+        alert(`Помилка: ${err.error}`);
+      }
+    } catch (err) {
+      console.error("Помилка додавання учасника:", err);
+    } finally {
+      setIsInviting(false);
+    }
+  };
   // Завантаження даних про проєкт та задачі
   const fetchProjectDetails = async () => {
     try {
@@ -235,7 +274,7 @@ export default function ProjectPage() {
   return (
     <main className="min-h-screen bg-gray-50 text-gray-900 pb-12">
       {/* Шапка проєкту */}
-    {/* Оновлений блок шапки проєкту */}
+      {/* Оновлений блок шапки проєкту */}
       <header className="bg-white border-b border-gray-200 py-6 px-8 flex justify-between items-center shadow-sm">
         <div>
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
@@ -250,7 +289,7 @@ export default function ProjectPage() {
             </p>
           )}
         </div>
-        
+
         {/* Додано контейнер для двох кнопок */}
         <div className="flex gap-3">
           <Link
@@ -268,11 +307,13 @@ export default function ProjectPage() {
         </div>
       </header>
 
-      {/* Панель налаштувань (ЗАЛИШАЄТЬСЯ БЕЗ ЗМІН) */}
+      {/* Панель налаштувань */}
       {showSettings && (
         <div className="max-w-7xl mx-auto px-8 pt-8">
           <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
             <h2 className="text-lg font-bold mb-4">Редагувати проєкт</h2>
+
+            {/* 1. ФОРМА РЕДАГУВАННЯ ПРОЄКТУ */}
             <form onSubmit={handleUpdateProjectSettings} className="flex flex-col gap-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
@@ -330,6 +371,57 @@ export default function ProjectPage() {
                 </button>
               </div>
             </form>
+
+            {/* 2. НОВИЙ БЛОК: КЕРУВАННЯ КОМАНДОЮ (Відокремлений лінією) */}
+            <div className="border-t border-gray-100 pt-6 mt-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+
+              {/* Форма запрошення нового учасника */}
+              <div>
+                <h3 className="text-sm font-bold text-gray-700 mb-2">Запросити учасника</h3>
+                <p className="text-xs text-gray-400 mb-3">Введіть нікнейм користувача на GitHub, щоб надати йому доступ до цього проєкту.</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={inviteUsername}
+                    onChange={(e) => setInviteUsername(e.target.value)}
+                    placeholder="Напр. octocat"
+                    className="px-3 py-2 border rounded text-sm focus:outline-indigo-500 flex-1 text-gray-900"
+                  />
+                  <button
+                    type="button" // type="button" запобігає відправленню основної форми проєкту
+                    onClick={handleAddMember}
+                    disabled={isInviting}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-sm font-semibold transition disabled:opacity-50"
+                  >
+                    {isInviting ? "Додавання..." : "Додати"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Список поточної команди проєкту */}
+              <div>
+                <h3 className="text-sm font-bold text-gray-700 mb-3">Команда проєкту ({project.members?.length || 0})</h3>
+                <div className="flex flex-col gap-2 max-h-[160px] overflow-y-auto pr-2">
+                  {project.members?.map((member) => (
+                    <div key={member.userId} className="flex items-center justify-between bg-gray-50 p-2 rounded border border-gray-100">
+                      <div className="flex items-center gap-2">
+                        <img src={member.user.image || ""} alt="" className="w-7 h-7 rounded-full border" />
+                        <div>
+                          <p className="text-xs font-semibold text-gray-800">{member.user.name || "Користувач"}</p>
+                          <p className="text-[10px] text-gray-400 font-mono">@{member.user.githubUsername}</p>
+                        </div>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${member.role === "ADMIN" ? "bg-amber-100 text-amber-800" : "bg-gray-100 text-gray-600"
+                        }`}>
+                        {member.role}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+
           </div>
         </div>
       )}

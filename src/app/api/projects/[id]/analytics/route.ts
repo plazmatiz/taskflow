@@ -76,6 +76,7 @@ export async function GET(
         additions: number;
         deletions: number;
         timeMs: number;
+        completedTasksCount: number
       }
     > = {};
 
@@ -90,6 +91,7 @@ export async function GET(
         additions: 0,
         deletions: 0,
         timeMs: 0,
+        completedTasksCount: 0,
       };
     });
 

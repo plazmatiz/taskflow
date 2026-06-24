@@ -14,6 +14,7 @@ interface LeaderboardUser {
   additions: number;
   deletions: number;
   timeMs: number;
+  completedTasksCount: number
 }
 
 interface CompletedTask {
@@ -124,7 +125,7 @@ export default function AnalyticsPage() {
       </header>
 
       <div className="max-w-7xl mx-auto p-8 flex flex-col gap-8">
-        
+
         {/* Блок сумарної статистики */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
@@ -151,10 +152,12 @@ export default function AnalyticsPage() {
         <section className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
           <h2 className="text-lg font-bold text-gray-800 mb-6">Внесок учасників команди</h2>
           <div className="overflow-x-auto">
+            {/* Таблиця внеску учасників */}
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-gray-100 text-xs font-semibold text-gray-400 uppercase">
                   <th className="pb-3">Розробник</th>
+                  <th className="pb-3 text-center">Виконано задач</th> {/* ДОДАНО */}
                   <th className="pb-3 text-center">Витрачений час</th>
                   <th className="pb-3 text-center">Комітів</th>
                   <th className="pb-3 text-right">Зміни коду</th>
@@ -169,6 +172,10 @@ export default function AnalyticsPage() {
                         <p className="font-semibold text-sm text-gray-800">{user.name}</p>
                         <p className="text-xs text-gray-400 font-mono">@{user.githubUsername}</p>
                       </div>
+                    </td>
+                    {/* ДОДАНО: відображення кількості виконаних задач */}
+                    <td className="py-4 text-center font-bold text-sm text-indigo-600">
+                      {user.completedTasksCount}
                     </td>
                     <td className="py-4 text-center font-semibold text-sm text-gray-700">
                       {formatTime(user.timeMs)}

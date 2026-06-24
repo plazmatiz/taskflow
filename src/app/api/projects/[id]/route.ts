@@ -72,6 +72,13 @@ export async function GET(
                     },
                 },
             },
+            include: {
+                members: {
+                    include: {
+                        user: true,
+                    },
+                },
+            },
         });
 
         if (!project) {
