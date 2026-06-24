@@ -19,6 +19,7 @@ interface Task {
   description: string | null;
   status: string;
   branchName: string | null;
+  prUrl: string | null;
   sessions: TaskSession[];
 }
 
@@ -73,6 +74,29 @@ export default function ProjectPage() {
   }, []);
 
 
+  const handleCreatePullRequest = async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/pr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseBranch: "main" }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        alert(data.alreadyExists ? "Pull Request вже існував, посилання оновлено!" : "Pull Request успішно створено на GitHub!");
+        if (data.prUrl) {
+          window.open(data.prUrl, "_blank"); // Автоматично відкриваємо PR у новій вкладці
+        }
+        fetchProjectDetails(); // Оновлюємо дошку
+      } else {
+        const err = await res.json();
+        alert(`Помилка: ${err.error}`);
+      }
+    } catch (err) {
+      console.error("Помилка створення PR:", err);
+    }
+  };
   // Оновлена функція видалення проєкту
   const handleDeleteProject = async () => {
     if (!project) return; // ДОДАНО: захист від null
@@ -649,6 +673,29 @@ export default function ProjectPage() {
                         </div>
                       )}
                     </div>
+
+                    {/* ДОДАНО: Кнопка або посилання на Pull Request */}
+                    {task.branchName && (
+                      <div className="mt-2">
+                        {task.prUrl ? (
+                          <a
+                            href={task.prUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] text-green-700 hover:underline font-bold flex items-center justify-center gap-1 bg-green-50 p-1.5 rounded border border-green-100"
+                          >
+                            🟢 Переглянути PR на GitHub →
+                          </a>
+                        ) : (
+                          <button
+                            onClick={() => handleCreatePullRequest(task.id)}
+                            className="w-full py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[11px] font-bold transition border border-indigo-100/50"
+                          >
+                            🚀 Створити Pull Request
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     <div className="mt-4 pt-3 border-t border-gray-100">
                       <div className="flex items-center justify-between mb-2">
