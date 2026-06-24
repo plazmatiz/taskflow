@@ -235,6 +235,7 @@ export default function ProjectPage() {
   return (
     <main className="min-h-screen bg-gray-50 text-gray-900 pb-12">
       {/* Шапка проєкту */}
+    {/* Оновлений блок шапки проєкту */}
       <header className="bg-white border-b border-gray-200 py-6 px-8 flex justify-between items-center shadow-sm">
         <div>
           <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
@@ -249,15 +250,25 @@ export default function ProjectPage() {
             </p>
           )}
         </div>
-        <button
-          onClick={() => setShowSettings(!showSettings)}
-          className="px-4 py-2 text-sm border rounded bg-white hover:bg-gray-50 font-semibold text-gray-700 transition"
-        >
-          {showSettings ? "Закрити налаштування" : "Налаштування проєкту"}
-        </button>
+        
+        {/* Додано контейнер для двох кнопок */}
+        <div className="flex gap-3">
+          <Link
+            href={`/projects/${projectId}/analytics`}
+            className="px-4 py-2 text-sm bg-indigo-50 hover:bg-indigo-100 font-semibold text-indigo-700 border border-indigo-100 rounded transition flex items-center"
+          >
+            Статистика та Аналітика
+          </Link>
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="px-4 py-2 text-sm border rounded bg-white hover:bg-gray-50 font-semibold text-gray-700 transition"
+          >
+            {showSettings ? "Закрити налаштування" : "Налаштування проєкту"}
+          </button>
+        </div>
       </header>
 
-      {/* Панель налаштувань */}
+      {/* Панель налаштувань (ЗАЛИШАЄТЬСЯ БЕЗ ЗМІН) */}
       {showSettings && (
         <div className="max-w-7xl mx-auto px-8 pt-8">
           <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
@@ -289,25 +300,25 @@ export default function ProjectPage() {
                   />
                 </div>
               </div>
-        
-             {/* Опція автоматичного створення та клонування коду */}
-{project.repoFullName && editRepo && project.repoFullName !== editRepo && (
-  <div className="bg-indigo-50/50 p-4 rounded border border-indigo-100 flex items-start gap-3">
-    <input
-      type="checkbox"
-      id="cloneCodeCheckbox"
-      checked={cloneCode}
-      onChange={(e) => setCloneCode(e.target.checked)}
-      className="mt-1 h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300"
-    />
-    <label htmlFor="cloneCodeCheckbox" className="text-xs text-indigo-900 leading-relaxed cursor-pointer select-none">
-      <strong>Автоматично створити новий репозиторій та скопіювати туди код.</strong><br />
-      <span className="text-indigo-700">
-        Система сама створить репозиторій <code className="font-mono bg-indigo-100/60 px-1 py-0.5 rounded text-indigo-800">{editRepo}</code> на GitHub (з тими ж налаштуваннями приватності, що й у старого) та повністю перенесе туди всі ваші гілки, файли й повну історію комітів.
-      </span>
-    </label>
-  </div>
-)}
+
+              {/* Опція автоматичного створення та клонування коду */}
+              {project.repoFullName && editRepo && project.repoFullName !== editRepo && (
+                <div className="bg-indigo-50/50 p-4 rounded border border-indigo-100 flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="cloneCodeCheckbox"
+                    checked={cloneCode}
+                    onChange={(e) => setCloneCode(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                  />
+                  <label htmlFor="cloneCodeCheckbox" className="text-xs text-indigo-900 leading-relaxed cursor-pointer select-none">
+                    <strong>Автоматично створити новий репозиторій та скопіювати туди код.</strong><br />
+                    <span className="text-indigo-700">
+                      Система сама створить репозиторій <code className="font-mono bg-indigo-100/60 px-1 py-0.5 rounded text-indigo-800">{editRepo}</code> на GitHub (з тими ж налаштуваннями приватності, що й у старого) та повністю перенесе туди всі ваші гілки, файли й повну історію комітів.
+                    </span>
+                  </label>
+                </div>
+              )}
 
               <div className="flex justify-end">
                 <button
@@ -325,7 +336,7 @@ export default function ProjectPage() {
 
       {/* Робочий простір */}
       <div className="max-w-7xl mx-auto p-8 grid grid-cols-1 lg:grid-cols-4 gap-8">
-        
+
         {/* Форма створення задачі */}
         <section className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm h-fit">
           <h2 className="text-lg font-bold mb-4">Нова задача</h2>
@@ -367,7 +378,7 @@ export default function ProjectPage() {
 
         {/* Дошка задач (Kanban-стиль) */}
         <section className="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
-          
+
           {/* Колонка: TODO */}
           <div className="bg-gray-100/70 p-4 rounded-lg border border-gray-200 flex flex-col gap-4 min-h-[400px]">
             <div className="flex justify-between items-center pb-2 border-b">
@@ -385,7 +396,7 @@ export default function ProjectPage() {
                       <p className="text-xs text-gray-500 mt-1 line-clamp-2">{task.description}</p>
                     )}
                   </div>
-                  
+
                   {/* Інформація про Git гілку */}
                   <div className="mt-3 text-[11px] font-mono bg-gray-50 p-2 rounded border border-gray-100 flex flex-col gap-1">
                     {task.branchName ? (
