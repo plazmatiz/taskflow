@@ -51,11 +51,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Назва проєкту обов'язкова" }, { status: 400 });
     }
 
-    // Створюємо проєкт і додаємо користувача як ADMIN
+    // ДОДАНО: очищення посилання, якщо користувач ввів повний URL або SSH-адресу
+    let sanitizedRepo = null;
+    if (repoFullName) {
+      sanitizedRepo = repoFullName
+        .trim()
+        .replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "") // Видаляємо https://github.com/
+        .replace(/^git@github\.com:/i, "")                  // Видаляємо SSH-префікс git@github.com:
+        .replace(/\.git$/i, "");                             // Видаляємо .git в кінці, якщо є
+    }
+
     const project = await db.project.create({
       data: {
         name,
-        repoFullName: repoFullName || null,
+        repoFullName: sanitizedRepo, // Зберігаємо вже очищений формат owner/repo
         members: {
           create: {
             // @ts-ignore
