@@ -255,7 +255,7 @@ export async function PATCH(
         });
 
         // АВТОМАТИЗАЦІЯ: Якщо репозиторій змінився або був доданий — реєструємо вебхук
-        if (sanitizedRepo && sanitizedRepo !== oldRepo && token) {
+        if (sanitizedRepo && token) {
             await autoSetupGithubWebhook(sanitizedRepo, token);
         }
 
