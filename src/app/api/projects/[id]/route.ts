@@ -5,6 +5,51 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 
+// Винесено на рівень модуля для чистоти та оптимізації пам'яті
+async function autoSetupGithubWebhook(repoFullName: string, token: string) {
+    const webhookUrl = process.env.WEBHOOK_APP_URL;
+    const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
+
+    if (!webhookUrl || !webhookSecret) {
+        console.warn("Пропущено автоналаштування вебхука: відсутній WEBHOOK_APP_URL або GITHUB_WEBHOOK_SECRET");
+        return;
+    }
+
+    try {
+        const res = await fetch(`https://api.github.com/repos/${repoFullName}/hooks`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`,
+                "User-Agent": "TaskFlow-App",
+                "Content-Type": "application/json",
+                Accept: "application/vnd.github+json",
+            },
+            body: JSON.stringify({
+                name: "web",
+                active: true,
+                events: ["push"],
+                config: {
+                    url: webhookUrl,
+                    content_type: "json",
+                    secret: webhookSecret,
+                    insecure_ssl: "0",
+                },
+            }),
+        });
+
+        if (!res.ok) {
+            const errData = await res.json();
+            if (res.status !== 422) {
+                console.error("Помилка створення вебхука на GitHub:", errData);
+            }
+        } else {
+            console.log(`Вебхук успішно створено автоматично для ${repoFullName}`);
+        }
+    } catch (err) {
+        console.error("Не вдалося виконати запит автоналаштування вебхука:", err);
+    }
+}
+
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -44,55 +89,6 @@ export async function PATCH(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    // Цю функцію ми будемо викликати при створенні/зміні репозиторію
-
-    async function autoSetupGithubWebhook(repoFullName: string, token: string) {
-        const appUrl = process.env.NEXTAUTH_URL; // Наприклад: https://my-app.vercel.app
-        const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
-
-        if (!appUrl || !webhookSecret) {
-            console.warn("Пропущено автоналаштування вебхука: відсутній NEXTAUTH_URL або GITHUB_WEBHOOK_SECRET");
-            return;
-        }
-
-        const webhookUrl = `${appUrl}/api/webhooks/github`;
-
-        try {
-            const res = await fetch(`https://api.github.com/repos/${repoFullName}/hooks`, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "User-Agent": "TaskFlow-App",
-                    "Content-Type": "application/json",
-                    Accept: "application/vnd.github+json",
-                },
-                body: JSON.stringify({
-                    name: "web",
-                    active: true,
-                    events: ["push"],
-                    config: {
-                        url: webhookUrl,
-                        content_type: "json",
-                        secret: webhookSecret,
-                        insecure_ssl: "0",
-                    },
-                }),
-            });
-
-            if (!res.ok) {
-                const errData = await res.json();
-                // Статус 422 означає, що вебхук для цього URL вже існує в репозиторії, це нормально
-                if (res.status !== 422) {
-                    console.error("Помилка створення вебхука на GitHub:", errData);
-                }
-            } else {
-                console.log(`Вебхук успішно створено автоматично для ${repoFullName}`);
-            }
-        } catch (err) {
-            console.error("Не вдалося виконати запит автоналаштування вебхука:", err);
-        }
-    }
-
     const session = await getServerSession(authOptions);
     if (!session || !session.user) {
         return NextResponse.json({ error: "Неавторизовано" }, { status: 401 });
@@ -138,16 +134,13 @@ export async function PATCH(
             return NextResponse.json({ error: "Не знайдено токен доступу до GitHub для створення та клонування" }, { status: 400 });
         }
 
-        // Попередній репозиторій
         const oldRepo = project.repoFullName;
 
-        // Очищуємо та розбираємо новий репозиторій
         let sanitizedRepo = repoFullName ? repoFullName.trim()
             .replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "")
             .replace(/^git@github\.com:/i, "")
             .replace(/\.git$/i, "") : null;
 
-        // Спроба автоматично визначити власника та назву репозиторію
         // @ts-ignore
         const userGithubName = session.user.githubUsername;
         let newOwner = userGithubName;
@@ -158,13 +151,11 @@ export async function PATCH(
             newOwner = parts[0];
             newRepoName = parts[1];
         } else if (sanitizedRepo) {
-            // Якщо користувач ввів просто назву (напр. "my-new-app"), власником стає сам користувач
             sanitizedRepo = `${newOwner}/${newRepoName}`;
         }
 
         // 2. Логіка створення та клонування
         if (cloneCode && oldRepo && sanitizedRepo && oldRepo !== sanitizedRepo) {
-            // Крок А: Дізнаємося приватність старого репозиторію (копіюємо налаштування)
             const oldRepoRes = await fetch(`https://api.github.com/repos/${oldRepo}`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -173,14 +164,12 @@ export async function PATCH(
                 },
             });
 
-            let isPrivate = true; // Безпечний дефолт
+            let isPrivate = true;
             if (oldRepoRes.ok) {
-                const oldRepoData = await oldRepoRes.ok ? await oldRepoRes.json() : {};
+                const oldRepoData = await oldRepoRes.json();
                 isPrivate = oldRepoData.private ?? true;
             }
 
-            // Крок Б: Створюємо новий порожній репозиторій на GitHub
-            // Якщо власник збігається з логіном юзера — створюємо у його профілі, інакше — в організації
             const createUrl =
                 newOwner.toLowerCase() === userGithubName.toLowerCase()
                     ? "https://api.github.com/user/repos"
@@ -203,7 +192,6 @@ export async function PATCH(
 
             if (!createRes.ok) {
                 const errData = await createRes.json();
-                // Якщо помилка не 422 (репозиторій уже існує), зупиняємо процес
                 if (createRes.status !== 422) {
                     return NextResponse.json(
                         { error: `Не вдалося створити репозиторій на GitHub: ${errData.message}` },
@@ -212,10 +200,8 @@ export async function PATCH(
                 }
             }
 
-            // Невелика затримка для завершення ініціалізації репозиторію на GitHub
             await new Promise((resolve) => setTimeout(resolve, 1000));
 
-            // Крок В: Запускаємо імпорт коду
             const importRes = await fetch(
                 `https://api.github.com/repos/${sanitizedRepo}/import`,
                 {
@@ -245,7 +231,6 @@ export async function PATCH(
             }
         }
 
-        // 3. Зберігаємо оновлені дані в локальній БД
         const updatedProject = await db.project.update({
             where: { id },
             data: {
@@ -254,7 +239,6 @@ export async function PATCH(
             },
         });
 
-        // АВТОМАТИЗАЦІЯ: Якщо репозиторій змінився або був доданий — реєструємо вебхук
         if (sanitizedRepo && token) {
             await autoSetupGithubWebhook(sanitizedRepo, token);
         }
