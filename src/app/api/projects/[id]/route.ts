@@ -1,19 +1,19 @@
-// app/api/projects/[id]/route.ts
-
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 
-// Винесено на рівень модуля для чистоти та оптимізації пам'яті
+// Функція автоналаштування вебхука
 async function autoSetupGithubWebhook(repoFullName: string, token: string) {
-    const webhookUrl = process.env.WEBHOOK_APP_URL;
+    const appUrl = process.env.WEBHOOK_APP_URL || process.env.NEXTAUTH_URL;
     const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
-    if (!webhookUrl || !webhookSecret) {
-        console.warn("Пропущено автоналаштування вебхука: відсутній WEBHOOK_APP_URL або GITHUB_WEBHOOK_SECRET");
+    if (!appUrl || !webhookSecret) {
+        console.warn("Пропущено автоналаштування вебхука: відсутній WEBHOOK_APP_URL/NEXTAUTH_URL або GITHUB_WEBHOOK_SECRET");
         return;
     }
+
+    const webhookUrl = `${appUrl.replace(/\/$/, "")}/api/webhooks/github`;
 
     try {
         const res = await fetch(`https://api.github.com/repos/${repoFullName}/hooks`, {
@@ -37,13 +37,8 @@ async function autoSetupGithubWebhook(repoFullName: string, token: string) {
             }),
         });
 
-        if (!res.ok) {
-            const errData = await res.json();
-            if (res.status !== 422) {
-                console.error("Помилка створення вебхука на GitHub:", errData);
-            }
-        } else {
-            console.log(`Вебхук успішно створено автоматично для ${repoFullName}`);
+        if (!res.ok && res.status !== 422) {
+            console.error("Помилка створення вебхука на GitHub:", await res.json());
         }
     } catch (err) {
         console.error("Не вдалося виконати запит автоналаштування вебхука:", err);
@@ -65,238 +60,122 @@ export async function GET(
         const project = await db.project.findFirst({
             where: {
                 id,
-                members: {
-                    some: {
-                        // @ts-ignore
-                        userId: session.user.id,
-                    },
-                },
+                // ВИПРАВЛЕНО: типізація session.user
+                members: { some: { userId: (session.user as any).id } },
             },
             include: {
-                members: {
-                    include: {
-                        user: true,
-                    },
-                },
+                members: { include: { user: true } },
             },
         });
 
-        if (!project) {
-            return NextResponse.json({ error: "Проєкт не знайдено" }, { status: 404 });
-        }
-
+        if (!project) return NextResponse.json({ error: "Проєкт не знайдено" }, { status: 404 });
         return NextResponse.json(project);
     } catch (error) {
-        console.error(error);
         return NextResponse.json({ error: "Помилка сервера" }, { status: 500 });
     }
 }
 
 export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session || !session.user) {
-    return NextResponse.json({ error: "Неавторизовано" }, { status: 401 });
-  }
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) return NextResponse.json({ error: "Неавторизовано" }, { status: 401 });
 
-  const { id } = await params;
-  // Додано: приймаємо параметр isArchived з тіла запиту
-  const { name, repoFullName, cloneCode, isArchived } = await request.json();
+    const { id } = await params;
+    const { name, repoFullName, cloneCode, isArchived } = await request.json();
 
-  try {
-    const project = await db.project.findUnique({
-      where: { id },
-      include: {
-        members: {
-          include: {
-            user: {
-              include: { accounts: { where: { provider: "github" } } },
+    try {
+        const project = await db.project.findUnique({
+            where: { id },
+            include: { members: { include: { user: { include: { accounts: { where: { provider: "github" } } } } } } },
+        });
+
+        if (!project) return NextResponse.json({ error: "Проєкт не знайдено" }, { status: 404 });
+
+        // ВИПРАВЛЕНО: типізація session.user
+        const isAdmin = project.members.some((m) => m.userId === (session.user as any).id && m.role === "ADMIN");
+        if (!isAdmin) return NextResponse.json({ error: "Тільки адміністратор може редагувати" }, { status: 403 });
+
+        const token = project.members.find((m) => m.user.accounts[0]?.access_token)?.user.accounts[0]?.access_token;
+        const oldRepo = project.repoFullName;
+
+        let sanitizedRepo = repoFullName ? repoFullName.trim()
+            .replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "")
+            .replace(/^git@github\.com:/i, "")
+            .replace(/\.git$/i, "") : null;
+
+        const userGithubName = (session.user as any).githubUsername;
+        let newOwner = userGithubName;
+        let newRepoName = sanitizedRepo || "";
+
+        if (sanitizedRepo && sanitizedRepo.includes("/")) {
+            const parts = sanitizedRepo.split("/");
+            newOwner = parts[0];
+            newRepoName = parts[1];
+        } else if (sanitizedRepo) {
+            sanitizedRepo = `${newOwner}/${newRepoName}`;
+        }
+
+        let cloneInstructions = null;
+
+        if (cloneCode && oldRepo && sanitizedRepo && oldRepo !== sanitizedRepo) {
+            if (!token) return NextResponse.json({ error: "Немає GitHub токена" }, { status: 400 });
+
+            const oldRepoRes = await fetch(`https://api.github.com/repos/${oldRepo}`, {
+                headers: { Authorization: `Bearer ${token}`, "User-Agent": "TaskFlow-App" }
+            });
+            const isPrivate = oldRepoRes.ok ? (await oldRepoRes.json()).private : true;
+
+            const createRes = await fetch(`https://api.github.com/${newOwner === userGithubName ? 'user' : 'orgs/' + newOwner}/repos`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}`, "User-Agent": "TaskFlow-App", "Content-Type": "application/json" },
+                body: JSON.stringify({ name: newRepoName, private: isPrivate }),
+            });
+
+            if (!createRes.ok && createRes.status !== 422) {
+                return NextResponse.json({ error: "Помилка створення репо на GitHub" }, { status: 400 });
+            }
+
+            cloneInstructions = `git clone --mirror https://github.com/${oldRepo}.git temp-repo && cd temp-repo && git push --mirror https://github.com/${sanitizedRepo}.git && cd .. && rm -rf temp-repo`;
+        }
+
+        const updatedProject = await db.project.update({
+            where: { id },
+            data: {
+                name: name || undefined,
+                repoFullName: sanitizedRepo,
+                isArchived: isArchived !== undefined ? isArchived : undefined,
             },
-          },
-        },
-      },
-    });
+        });
 
-    if (!project) {
-      return NextResponse.json({ error: "Проєкт не знайдено" }, { status: 404 });
+        if (sanitizedRepo && token) await autoSetupGithubWebhook(sanitizedRepo, token);
+
+        return NextResponse.json({ project: updatedProject, cloneInstructions });
+    } catch (error) {
+        return NextResponse.json({ error: "Помилка сервера" }, { status: 500 });
     }
-
-    const isAdmin = project.members.some(
-      // @ts-ignore
-      (m) => m.userId === session.user.id && m.role === "ADMIN"
-    );
-
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Тільки адміністратор може редагувати проєкт" }, { status: 403 });
-    }
-
-    const memberWithToken = project.members.find(
-      (m) => m.user.accounts[0]?.access_token
-    );
-    const token = memberWithToken?.user.accounts[0]?.access_token;
-
-    if (cloneCode && !token) {
-      return NextResponse.json({ error: "Не знайдено токен доступу до GitHub для створення та клонування" }, { status: 400 });
-    }
-
-    const oldRepo = project.repoFullName;
-
-    let sanitizedRepo = repoFullName ? repoFullName.trim()
-      .replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "")
-      .replace(/^git@github\.com:/i, "")
-      .replace(/\.git$/i, "") : null;
-
-    // @ts-ignore
-    const userGithubName = session.user.githubUsername;
-    let newOwner = userGithubName;
-    let newRepoName = sanitizedRepo || "";
-
-    if (sanitizedRepo && sanitizedRepo.includes("/")) {
-      const parts = sanitizedRepo.split("/");
-      newOwner = parts[0];
-      newRepoName = parts[1];
-    } else if (sanitizedRepo) {
-      sanitizedRepo = `${newOwner}/${newRepoName}`;
-    }
-
-    if (cloneCode && oldRepo && sanitizedRepo && oldRepo !== sanitizedRepo) {
-      const oldRepoRes = await fetch(`https://api.github.com/repos/${oldRepo}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "User-Agent": "TaskFlow-App",
-          Accept: "application/vnd.github+json",
-        },
-      });
-
-      let isPrivate = true;
-      if (oldRepoRes.ok) {
-        const oldRepoData = await oldRepoRes.json();
-        isPrivate = oldRepoData.private ?? true;
-      }
-
-      const createUrl =
-        newOwner.toLowerCase() === userGithubName.toLowerCase()
-          ? "https://api.github.com/user/repos"
-          : `https://api.github.com/orgs/${newOwner}/repos`;
-
-      const createRes = await fetch(createUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "User-Agent": "TaskFlow-App",
-          "Content-Type": "application/json",
-          Accept: "application/vnd.github+json",
-        },
-        body: JSON.stringify({
-          name: newRepoName,
-          private: isPrivate,
-          description: `Автоматично створено через TaskFlow Pro з проєкту ${project.name}`,
-        }),
-      });
-
-      if (!createRes.ok) {
-        const errData = await createRes.json();
-        if (createRes.status !== 422) {
-          return NextResponse.json(
-            { error: `Не вдалося створити репозиторій на GitHub: ${errData.message}` },
-            { status: 400 }
-          );
-        }
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const importRes = await fetch(
-        `https://api.github.com/repos/${sanitizedRepo}/import`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "User-Agent": "TaskFlow-App",
-            "Content-Type": "application/json",
-            Accept: "application/vnd.github+json",
-          },
-          body: JSON.stringify({
-            vcs: "git",
-            vcs_url: `https://github.com/${oldRepo}.git`,
-            vcs_username: "oauth2",
-            vcs_password: token,
-          }),
-        }
-      );
-
-      if (!importRes.ok) {
-        const errData = await importRes.json();
-        console.error("GitHub Importer Error:", errData);
-        return NextResponse.json(
-          { error: `Репозиторій створено, але не вдалося запустити імпорт коду: ${errData.message}` },
-          { status: 400 }
-        );
-      }
-    }
-
-    const updatedProject = await db.project.update({
-      where: { id },
-      data: {
-        name: name || undefined,
-        repoFullName: sanitizedRepo,
-        // ОНОВЛЕНО: Оновлюємо статус архіву, якщо параметр був переданий
-        isArchived: isArchived !== undefined ? isArchived : undefined,
-      },
-    });
-
-    let webhookDiagnostics: any = { executed: false, tokenFound: !!token };
-    if (sanitizedRepo && token) {
-      webhookDiagnostics = await autoSetupGithubWebhook(sanitizedRepo, token);
-    }
-
-    return NextResponse.json({
-      project: updatedProject,
-      diagnostics: webhookDiagnostics,
-    });
-  } catch (error) {
-    console.error("Помилка оновлення проєкту:", error);
-    return NextResponse.json({ error: "Помилка сервера" }, { status: 500 });
-  }
 }
 
-// ДОДАНО: Метод DELETE для повного видалення проєкту
 export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session || !session.user) {
-    return NextResponse.json({ error: "Неавторизовано" }, { status: 401 });
-  }
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) return NextResponse.json({ error: "Неавторизовано" }, { status: 401 });
 
-  const { id } = await params;
+    const { id } = await params;
+    try {
+        const member = await db.projectMember.findFirst({
+            // ВИПРАВЛЕНО: типізація session.user
+            where: { projectId: id, userId: (session.user as any).id, role: "ADMIN" },
+        });
 
-  try {
-    // Перевіряємо, чи є користувач ADMIN-ом
-    const member = await db.projectMember.findFirst({
-      where: {
-        projectId: id,
-        // @ts-ignore
-        userId: session.user.id,
-        role: "ADMIN",
-      },
-    });
+        if (!member) return NextResponse.json({ error: "Тільки ADMIN може видалити" }, { status: 403 });
 
-    if (!member) {
-      return NextResponse.json({ error: "Тільки адміністратор може видалити проєкт" }, { status: 403 });
+        await db.project.delete({ where: { id } });
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        return NextResponse.json({ error: "Помилка видалення" }, { status: 500 });
     }
-
-    // Видаляємо проєкт
-    await db.project.delete({
-      where: { id },
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Помилка видалення проєкту:", error);
-    return NextResponse.json({ error: "Помилка сервера" }, { status: 500 });
-  }
 }

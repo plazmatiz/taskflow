@@ -293,21 +293,27 @@ export default function ProjectPage() {
         }),
       });
 
+      const data = await res.json();
+
       if (res.ok) {
-        alert(
-          cloneCode
-            ? "Проєкт оновлено. GitHub розпочав імпорт вашого коду у фоновому режимі!"
-            : "Налаштування проєкту успішно оновлено."
-        );
+        if (data.cloneInstructions) {
+          // Якщо прийшла команда клонування, показуємо її
+          const confirmCopy = confirm(
+            `Репозиторій створено! Для перенесення всього коду (історії та гілок) виконайте цю команду в терміналі:\n\n` +
+            `${data.cloneInstructions}\n\n` +
+            `Команда скопійована в буфер обміну.`
+          );
+          navigator.clipboard.writeText(data.cloneInstructions);
+        } else {
+          alert("Налаштування проєкту оновлено.");
+        }
         setShowSettings(false);
-        setCloneCode(false);
         fetchProjectDetails();
       } else {
-        const err = await res.json();
-        alert(`Помилка: ${err.error}`);
+        alert(`Помилка: ${data.error}`);
       }
     } catch (err) {
-      console.error("Помилка оновлення налаштувань проєкту:", err);
+      console.error("Помилка оновлення:", err);
     } finally {
       setIsUpdatingProject(false);
     }
