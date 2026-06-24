@@ -91,8 +91,9 @@ model Task {
   id          String        @id @default(cuid())
   title       String
   description String?       @db.Text
-  status      String        @default("TODO") // "TODO" | "IN_PROGRESS" | "DONE"
-  branchName  String?       // Закріплена git-гілка
+  status      String        @default("TODO")
+  branchName  String?       
+  prUrl       String?      
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
