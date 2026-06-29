@@ -5,15 +5,25 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 
-async function autoSetupGithubWebhook(repoFullName: string, token: string) {
-    const webhookUrl = process.env.WEBHOOK_APP_URL;
-    const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
+async function autoSetupGithubWebhook(repoFullName: string, token: string, userGithubName: string) {
+    // repoFullName приходить у форматі "owner/repo"
+    const owner = repoFullName.split('/')[0];
 
-    if (!webhookUrl || !webhookSecret) {
-        console.warn("Пропущено автоналаштування вебхука: відсутній WEBHOOK_APP_URL або GITHUB_WEBHOOK_SECRET");
+    // Якщо власник не збігається з поточним користувачем (це організація)
+    if (owner.toLowerCase() !== userGithubName.toLowerCase()) {
+        console.log(`Пропуск автоналаштування: ${repoFullName} належить організації ${owner}. Налаштуйте вебхук вручну.`);
         return;
     }
 
+    const appUrl = process.env.WEBHOOK_APP_URL || process.env.NEXTAUTH_URL;
+    const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
+
+    if (!appUrl || !webhookSecret) {
+        console.warn("Пропущено автоналаштування вебхука: відсутні змінні оточення");
+        return;
+    }
+
+    const webhookUrl = `${appUrl.replace(/\/$/, "")}/api/webhooks/github`;
 
     try {
         const res = await fetch(`https://api.github.com/repos/${repoFullName}/hooks`, {
@@ -37,13 +47,8 @@ async function autoSetupGithubWebhook(repoFullName: string, token: string) {
             }),
         });
 
-        if (!res.ok) {
-            const errData = await res.json();
-            if (res.status !== 422) {
-                console.error("Помилка створення вебхука на GitHub:", errData);
-            }
-        } else {
-            console.log(`Вебхук успішно створено автоматично для ${repoFullName}`);
+        if (!res.ok && res.status !== 422) {
+            console.error("Помилка створення вебхука на GitHub:", await res.json());
         }
     } catch (err) {
         console.error("Не вдалося виконати запит автоналаштування вебхука:", err);
@@ -124,8 +129,9 @@ export async function POST(request: Request) {
                 // @ts-ignore
                 where: { userId: session.user.id, provider: "github" },
             });
-            if (account?.access_token) {
-                await autoSetupGithubWebhook(sanitizedRepo, account.access_token);
+            const userGithubName = session.user.githubUsername;
+            if (sanitizedRepo && account?.access_token) {
+                await autoSetupGithubWebhook(sanitizedRepo, account.access_token, userGithubName);
             }
         }
 

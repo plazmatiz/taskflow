@@ -3,13 +3,21 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 
-// Функція автоналаштування вебхука
-async function autoSetupGithubWebhook(repoFullName: string, token: string) {
+async function autoSetupGithubWebhook(repoFullName: string, token: string, userGithubName: string) {
+    // repoFullName приходить у форматі "owner/repo"
+    const owner = repoFullName.split('/')[0];
+
+    // Якщо власник не збігається з поточним користувачем (це організація)
+    if (owner.toLowerCase() !== userGithubName.toLowerCase()) {
+        console.log(`Пропуск автоналаштування: ${repoFullName} належить організації ${owner}. Налаштуйте вебхук вручну.`);
+        return;
+    }
+
     const appUrl = process.env.WEBHOOK_APP_URL || process.env.NEXTAUTH_URL;
     const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
     if (!appUrl || !webhookSecret) {
-        console.warn("Пропущено автоналаштування вебхука: відсутній WEBHOOK_APP_URL/NEXTAUTH_URL або GITHUB_WEBHOOK_SECRET");
+        console.warn("Пропущено автоналаштування вебхука: відсутні змінні оточення");
         return;
     }
 
@@ -60,7 +68,6 @@ export async function GET(
         const project = await db.project.findFirst({
             where: {
                 id,
-                // ВИПРАВЛЕНО: типізація session.user
                 members: { some: { userId: (session.user as any).id } },
             },
             include: {
@@ -93,7 +100,6 @@ export async function PATCH(
 
         if (!project) return NextResponse.json({ error: "Проєкт не знайдено" }, { status: 404 });
 
-        // ВИПРАВЛЕНО: типізація session.user
         const isAdmin = project.members.some((m) => m.userId === (session.user as any).id && m.role === "ADMIN");
         if (!isAdmin) return NextResponse.json({ error: "Тільки адміністратор може редагувати" }, { status: 403 });
 
@@ -105,7 +111,7 @@ export async function PATCH(
             .replace(/^git@github\.com:/i, "")
             .replace(/\.git$/i, "") : null;
 
-        const userGithubName = (session.user as any).githubUsername;
+        const userGithubName = session.user.githubUsername;
         let newOwner = userGithubName;
         let newRepoName = sanitizedRepo || "";
 
@@ -127,14 +133,25 @@ export async function PATCH(
             });
             const isPrivate = oldRepoRes.ok ? (await oldRepoRes.json()).private : true;
 
-            const createRes = await fetch(`https://api.github.com/${newOwner === userGithubName ? 'user' : 'orgs/' + newOwner}/repos`, {
+            const createRes = await fetch(`https://api.github.com/${newOwner.toLowerCase() === userGithubName.toLowerCase() ? 'user' : 'orgs/' + newOwner}/repos`, {
                 method: "POST",
-                headers: { Authorization: `Bearer ${token}`, "User-Agent": "TaskFlow-App", "Content-Type": "application/json" },
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "User-Agent": "TaskFlow-App",
+                    "Content-Type": "application/json",
+                    Accept: "application/vnd.github+json"
+                },
                 body: JSON.stringify({ name: newRepoName, private: isPrivate }),
             });
 
-            if (!createRes.ok && createRes.status !== 422) {
-                return NextResponse.json({ error: "Помилка створення репо на GitHub" }, { status: 400 });
+            if (!createRes.ok) {
+                const errData = await createRes.json();
+                if (createRes.status === 403 || createRes.status === 404) {
+                    return NextResponse.json({ error: `Немає прав доступу до організації '${newOwner}'. Перевірте налаштування в GitHub (Settings -> Applications).` }, { status: 403 });
+                }
+                if (createRes.status !== 422) {
+                    return NextResponse.json({ error: `Помилка створення репо: ${errData.message}` }, { status: 400 });
+                }
             }
 
             cloneInstructions = `git clone --mirror https://github.com/${oldRepo}.git temp-repo && cd temp-repo && git push --mirror https://github.com/${sanitizedRepo}.git && cd .. && rm -rf temp-repo`;
@@ -149,10 +166,13 @@ export async function PATCH(
             },
         });
 
-        if (sanitizedRepo && token) await autoSetupGithubWebhook(sanitizedRepo, token);
+        if (sanitizedRepo && token) {
+            await autoSetupGithubWebhook(sanitizedRepo, token, userGithubName);
+        }
 
         return NextResponse.json({ project: updatedProject, cloneInstructions });
     } catch (error) {
+        console.error("Помилка оновлення проєкту:", error);
         return NextResponse.json({ error: "Помилка сервера" }, { status: 500 });
     }
 }
@@ -167,7 +187,6 @@ export async function DELETE(
     const { id } = await params;
     try {
         const member = await db.projectMember.findFirst({
-            // ВИПРАВЛЕНО: типізація session.user
             where: { projectId: id, userId: (session.user as any).id, role: "ADMIN" },
         });
 
